@@ -270,7 +270,7 @@ export function Sidebar({
   const [showNewFolder, setShowNewFolder] = useState(false);
   const newFolderRef = useRef<HTMLInputElement>(null);
 
-  const partnerName = meta.partnerName ?? "Partner";
+  const partnerName = meta.partnerName ?? "Lisa";
 
   // Group entries by folder (applying tag filter)
   const { grouped, unfiled } = useMemo(() => {

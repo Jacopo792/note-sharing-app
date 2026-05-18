@@ -25,5 +25,14 @@ export async function saveMeta(
   sha: string | undefined,
 ): Promise<string> {
   const content = await encryptMeta(meta, keys, owner);
-  return writeNoteFile(repo, pat, `notes/meta-${owner}.napp`, content, sha, "update meta");
+  try {
+    return await writeNoteFile(repo, pat, `notes/meta-${owner}.napp`, content, sha, "update meta");
+  } catch (e) {
+    // 409 = stale or missing SHA — re-read current SHA from GitHub and retry once
+    if (e instanceof Error && e.message.includes("409")) {
+      const current = await readFile(repo, pat, `notes/meta-${owner}.napp`);
+      return writeNoteFile(repo, pat, `notes/meta-${owner}.napp`, content, current?.sha, "update meta");
+    }
+    throw e;
+  }
 }
