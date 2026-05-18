@@ -131,17 +131,28 @@
   background: var(--border) !important;
 }
 
-/* Editor area */
+/* Editor area
+   RULE: .w-md-editor-text-input (textarea) and .w-md-editor-text-pre (highlight
+   overlay) are absolutely-positioned siblings. Any property that affects text
+   geometry (font-size, line-height, padding) MUST be set identically on both,
+   or the cursor drifts. Only safe overrides: color, background, caret-color. */
 .w-md-editor-content {
   background: var(--background) !important;
 }
 
-.w-md-editor-text-pre > code,
+/* Sync padding on BOTH layers so title above can align to the same x-offset */
 .w-md-editor-text-input,
-.w-md-editor-text {
+.w-md-editor-text-pre {
+  padding: 12px 20px !important;
+}
+
+.w-md-editor-text-pre > code {
   color: var(--foreground) !important;
-  font-size: 14px !important;
-  line-height: 1.7 !important;
+}
+
+.w-md-editor-text-input {
+  color: var(--foreground) !important;
+  caret-color: var(--accent) !important;
 }
 
 /* Preview */
