@@ -2,7 +2,6 @@
   "name": "notes-app",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.1.2",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
