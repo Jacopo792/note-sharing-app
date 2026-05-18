@@ -132,18 +132,23 @@
 }
 
 /* Editor area
-   RULE: .w-md-editor-text-input (textarea) and .w-md-editor-text-pre (highlight
-   overlay) are absolutely-positioned siblings. Any property that affects text
-   geometry (font-size, line-height, padding) MUST be set identically on both,
-   or the cursor drifts. Only safe overrides: color, background, caret-color. */
+   .w-md-editor-text-input (textarea) and .w-md-editor-text-pre are
+   absolutely-positioned siblings — they MUST share identical font metrics
+   or the cursor drifts. The global "textarea { font-family: inherit }"
+   rule in @layer base would assign the page's sans-serif to the textarea
+   while the pre keeps monospace → characters have different widths →
+   cursor shifts right as the line grows. Force the same monospace stack
+   on ALL three nodes. Do NOT touch padding, font-size, or line-height. */
 .w-md-editor-content {
   background: var(--background) !important;
 }
 
-/* Sync padding on BOTH layers so title above can align to the same x-offset */
 .w-md-editor-text-input,
-.w-md-editor-text-pre {
-  padding: 12px 20px !important;
+.w-md-editor-text-pre,
+.w-md-editor-text-pre > code {
+  font-family: "SFMono-Regular", "SF Mono", ui-monospace,
+               Menlo, Monaco, Consolas, "Liberation Mono",
+               "Courier New", monospace !important;
 }
 
 .w-md-editor-text-pre > code {
