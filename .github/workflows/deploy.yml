@@ -41,7 +41,7 @@ jobs:
         env:
           # GitHub Pages serves from /<repo-name>/ by default.
           # Change to / if you set up a custom domain at repo root.
-          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_BASE_PATH: /note-sharing-app/
 
       - uses: actions/configure-pages@v5
 
