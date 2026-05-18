@@ -1,34 +1,68 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, CloudUpload, Lock, Save } from "lucide-react";
 import { restoreSession, clearSession, type AppSession } from "@/lib/session";
-import { decryptFile, encryptNote, type Note } from "@/lib/crypto";
-import {
-  fetchNoteFiles,
-  writeNoteFile,
-  deleteNoteFile,
-  ensureDataBranch,
-} from "@/lib/github";
+import { decryptFile, encryptNote } from "@/lib/crypto";
+import { fetchNoteFiles, writeNoteFile, deleteNoteFile, ensureDataBranch } from "@/lib/github";
+import { loadMeta, saveMeta } from "@/lib/meta";
+import { type Meta, type NoteMeta, type Note, EMPTY_META } from "@/lib/types";
+import { lazy, Suspense } from "react";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { SaveModal } from "@/components/SaveModal";
+import { Sidebar, type NoteEntry } from "@/components/Sidebar";
+
+const NoteEditor = lazy(() =>
+  import("@/components/NoteEditor").then((m) => ({ default: m.NoteEditor })),
+);
 
 export const Route = createFileRoute("/notes")({
   component: NotesPage,
 });
 
-interface NoteEntry {
-  note: Note;
-  sha: string;
-  path: string;
-}
-
 function NotesPage() {
   const navigate = useNavigate();
+
+  // ── Session ──────────────────────────────────────────────────────────────
   const [session, setSession] = useState<AppSession | null>(null);
+
+  // ── View (u1 can see own notes or partner's notes) ───────────────────────
+  const [viewAs, setViewAs] = useState<"u1" | "u2">("u1");
+
+  // ── Notes data ───────────────────────────────────────────────────────────
   const [entries, setEntries] = useState<NoteEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ title: "", body: "" });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
 
+  // ── Per-view meta (folders, tags, note assignments) ──────────────────────
+  const [myMeta, setMyMeta] = useState<Meta>({ ...EMPTY_META });
+  const [myMetaSha, setMyMetaSha] = useState<string | undefined>();
+  const [partnerMeta, setPartnerMeta] = useState<Meta>({ ...EMPTY_META });
+  const [partnerMetaSha, setPartnerMetaSha] = useState<string | undefined>();
+
+  const activeMeta = viewAs === "u1" ? myMeta : partnerMeta;
+  const activeMetaSha = viewAs === "u1" ? myMetaSha : partnerMetaSha;
+
+  function setActiveMeta(m: Meta) {
+    if (viewAs === "u1") setMyMeta(m); else setPartnerMeta(m);
+  }
+  function setActiveMetaSha(sha: string) {
+    if (viewAs === "u1") setMyMetaSha(sha); else setPartnerMetaSha(sha);
+  }
+
+  // ── Draft (local, not pushed) ────────────────────────────────────────────
+  const [draft, setDraft] = useState<{ title: string; body: string } | null>(null);
+  const [isDraftDirty, setIsDraftDirty] = useState(false);
+  const [isMetaDirty, setIsMetaDirty] = useState(false);
+  const lastSelectedRef = useRef<string | null>(null);
+
+  // ── UI state ─────────────────────────────────────────────────────────────
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [filterTagIds, setFilterTagIds] = useState<string[]>([]);
+
+  // ── Bootstrap ────────────────────────────────────────────────────────────
   useEffect(() => {
     restoreSession().then((s) => {
       if (!s) { navigate({ to: "/" }); return; }
@@ -46,7 +80,13 @@ function NotesPage() {
     setError("");
     try {
       await ensureDataBranch(s.repo, s.pat);
-      const files = await fetchNoteFiles(s.repo, s.pat);
+
+      const [files, myMetaResult, partnerMetaResult] = await Promise.all([
+        fetchNoteFiles(s.repo, s.pat),
+        loadMeta(s.repo, s.pat, s.keys, s.role),
+        s.role === "u1" ? loadMeta(s.repo, s.pat, s.keys, "u2") : Promise.resolve({ meta: { ...EMPTY_META }, sha: undefined }),
+      ]);
+
       const decrypted: NoteEntry[] = [];
       await Promise.all(
         files.map(async (f) => {
@@ -55,103 +95,167 @@ function NotesPage() {
         }),
       );
       decrypted.sort((a, b) => b.note.updatedAt.localeCompare(a.note.updatedAt));
+
       setEntries(decrypted);
+      setMyMeta(myMetaResult.meta);
+      setMyMetaSha(myMetaResult.sha);
+      if (s.role === "u1") {
+        setPartnerMeta(partnerMetaResult.meta);
+        setPartnerMetaSha(partnerMetaResult.sha);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load notes");
+      setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
   }
 
-  const selected = entries.find((e) => e.note.id === selectedId) ?? null;
+  // ── Selection & draft ────────────────────────────────────────────────────
+  const viewEntries = entries.filter((e) => e.note.owner === viewAs);
+  const selected = viewEntries.find((e) => e.note.id === selectedId) ?? null;
   const canEdit = selected
     ? session?.role === "u1" || selected.note.owner === "u2"
     : false;
 
-  const lastIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (selected && selected.note.id !== lastIdRef.current) {
+    if (selected && selected.note.id !== lastSelectedRef.current) {
       setDraft({ title: selected.note.title, body: selected.note.body });
-      lastIdRef.current = selected.note.id;
+      setIsDraftDirty(false);
+      lastSelectedRef.current = selected.note.id;
     }
+    if (!selected) { setDraft(null); setIsDraftDirty(false); }
   }, [selected]);
 
-  const handleNew = useCallback(async () => {
-    if (!session) return;
-    const note: Note = {
-      id: crypto.randomUUID(),
-      title: "",
-      body: "",
-      owner: session.role,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setSaving(true);
-    setError("");
-    try {
-      const fileContent = await encryptNote(note, session.keys);
-      const path = `notes/${note.id}.napp`;
-      const sha = await writeNoteFile(session.repo, session.pat, path, fileContent);
-      setEntries((prev) => [{ note, sha, path }, ...prev]);
-      setSelectedId(note.id);
-      setDraft({ title: "", body: "" });
-      lastIdRef.current = note.id;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create note");
-    } finally {
-      setSaving(false);
-    }
-  }, [session]);
+  function handleDraftChange(title: string, body: string) {
+    setDraft({ title, body });
+    setIsDraftDirty(true);
+  }
 
-  const saveDraft = useCallback(async () => {
-    if (!selected || !session || !canEdit) return;
-    if (draft.title === selected.note.title && draft.body === selected.note.body) return;
-    const updated: Note = {
-      ...selected.note,
-      title: draft.title,
-      body: draft.body,
-      updatedAt: new Date().toISOString(),
-    };
-    setSaving(true);
-    setError("");
-    try {
-      const fileContent = await encryptNote(updated, session.keys);
-      const newSha = await writeNoteFile(
-        session.repo,
-        session.pat,
-        selected.path,
-        fileContent,
-        selected.sha,
-      );
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.note.id === updated.id ? { note: updated, sha: newSha, path: e.path } : e,
-        ),
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }, [selected, session, canEdit, draft]);
+  // ── Meta changes (from sidebar: folders, tags, assignments) ─────────────
+  function handleMetaChange(m: Meta) {
+    setActiveMeta(m);
+    setIsMetaDirty(true);
+  }
 
+  function handleTagsChange(noteId: string, tagIds: string[]) {
+    const existing = activeMeta.notes.find((n) => n.id === noteId);
+    const updatedNotes: NoteMeta[] = existing
+      ? activeMeta.notes.map((n) => n.id === noteId ? { ...n, tagIds } : n)
+      : [...activeMeta.notes, { id: noteId, folderId: null, tagIds }];
+    handleMetaChange({ ...activeMeta, notes: updatedNotes });
+  }
+
+  // ── New note ─────────────────────────────────────────────────────────────
+  const handleNew = useCallback(
+    async (folderId?: string | null) => {
+      if (!session) return;
+      const owner = viewAs;
+      const note: Note = {
+        id: crypto.randomUUID(), title: "", body: "",
+        owner, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      };
+      setSaving(true); setError("");
+      try {
+        const content = await encryptNote(note, session.keys);
+        const path = `notes/${note.id}.napp`;
+        const sha = await writeNoteFile(session.repo, session.pat, path, content);
+        const newEntry: NoteEntry = { note, sha, path };
+        setEntries((prev) => [newEntry, ...prev]);
+
+        // Add to meta
+        const newNoteMeta: NoteMeta = { id: note.id, folderId: folderId ?? null, tagIds: [] };
+        const updatedMeta = { ...activeMeta, notes: [...activeMeta.notes, newNoteMeta] };
+        setActiveMeta(updatedMeta);
+        setIsMetaDirty(true);
+
+        setSelectedId(note.id);
+        setDraft({ title: "", body: "" });
+        setIsDraftDirty(false);
+        lastSelectedRef.current = note.id;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to create note");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [session, viewAs, activeMeta],
+  );
+
+  // ── Delete ────────────────────────────────────────────────────────────────
   const handleDelete = useCallback(
     async (entry: NoteEntry) => {
       if (!session) return;
-      setSaving(true);
-      setError("");
+      setSaving(true); setError("");
       try {
         await deleteNoteFile(session.repo, session.pat, entry.path, entry.sha);
         setEntries((prev) => prev.filter((e) => e.note.id !== entry.note.id));
-        if (selectedId === entry.note.id) setSelectedId(null);
+        const updatedMeta = { ...activeMeta, notes: activeMeta.notes.filter((n) => n.id !== entry.note.id) };
+        setActiveMeta(updatedMeta);
+        setIsMetaDirty(true);
+        if (selectedId === entry.note.id) { setSelectedId(null); setDraft(null); }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to delete");
       } finally {
         setSaving(false);
       }
     },
-    [session, selectedId],
+    [session, selectedId, activeMeta],
   );
+
+  // ── Save (push to GitHub) ────────────────────────────────────────────────
+  const isDirty = isDraftDirty || isMetaDirty;
+
+  function handleSaveRequest() {
+    if (!isDirty) return;
+    setShowSaveModal(true);
+  }
+
+  async function handleSaveConfirm() {
+    if (!session) return;
+    setSaving(true);
+    try {
+      await Promise.all([
+        isDraftDirty && selected && draft ? (async () => {
+          const updated: Note = {
+            ...selected.note,
+            title: draft.title,
+            body: draft.body,
+            updatedAt: new Date().toISOString(),
+          };
+          const content = await encryptNote(updated, session.keys);
+          const newSha = await writeNoteFile(session.repo, session.pat, selected.path, content, selected.sha);
+          setEntries((prev) =>
+            prev.map((e) => e.note.id === updated.id ? { ...e, note: updated, sha: newSha } : e),
+          );
+          setIsDraftDirty(false);
+        })() : Promise.resolve(),
+
+        isMetaDirty ? (async () => {
+          const owner = viewAs;
+          const sha = activeMetaSha;
+          const newSha = await saveMeta(session.repo, session.pat, session.keys, owner, activeMeta, sha);
+          setActiveMetaSha(newSha);
+          setIsMetaDirty(false);
+        })() : Promise.resolve(),
+      ]);
+
+      setShowSaveModal(false);
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleViewChange(v: "u1" | "u2") {
+    setViewAs(v);
+    setSelectedId(null);
+    setDraft(null);
+    setIsDraftDirty(false);
+    setFilterTagIds([]);
+  }
 
   function handleLock() {
     clearSession();
@@ -160,165 +264,103 @@ function NotesPage() {
 
   if (!session) return null;
 
-  const myEntries = entries.filter((e) => e.note.owner === session.role);
-  const u2Entries = session.role === "u1" ? entries.filter((e) => e.note.owner === "u2") : [];
-
   return (
-    <div className="h-screen flex flex-col">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
-        <span className="text-sm font-medium text-foreground">Notes</span>
-        <div className="flex items-center gap-4">
-          {saving && <span className="text-xs text-muted">Saving…</span>}
-          {error && (
-            <span className="text-xs text-danger max-w-xs truncate" title={error}>
-              {error}
-            </span>
-          )}
-          <button
-            onClick={handleLock}
-            className="text-sm text-muted hover:text-foreground transition-colors"
-          >
-            Lock
-          </button>
-        </div>
+    <div className="h-screen flex flex-col bg-background">
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <header className="flex items-center gap-3 px-4 py-2 border-b border-border bg-surface/50 shrink-0" style={{ backdropFilter: "blur(8px)" }}>
+        <span className="text-sm font-semibold text-foreground mr-auto">Notes</span>
+
+        {/* Error */}
+        {error && (
+          <span className="text-xs text-danger max-w-xs truncate" title={error}>{error}</span>
+        )}
+
+        {/* Save status */}
+        {saving && (
+          <span className="flex items-center gap-1.5 text-xs text-muted animate-fade-in">
+            <span className="w-3 h-3 border-2 border-border border-t-accent rounded-full animate-spin inline-block" />
+            Saving…
+          </span>
+        )}
+        {savedFlash && !saving && (
+          <span className="flex items-center gap-1 text-xs text-success animate-fade-in">
+            <Check size={12} /> Saved
+          </span>
+        )}
+
+        {/* Save button */}
+        <button
+          onClick={handleSaveRequest}
+          disabled={!isDirty || saving}
+          title={isDirty ? "Push to GitHub (Ctrl+S)" : "No unsaved changes"}
+          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+            isDirty
+              ? "bg-accent text-white border-accent hover:opacity-90 shadow-sm"
+              : "text-muted border-border opacity-40"
+          } disabled:cursor-default`}
+        >
+          {isDirty ? <CloudUpload size={13} /> : <Save size={13} />}
+          {isDirty ? "Save" : "Saved"}
+        </button>
+
+        <ThemeToggle />
+
+        <button
+          onClick={handleLock}
+          title="Lock"
+          className="flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors cursor-pointer"
+        >
+          <Lock size={14} />
+          <span className="hidden sm:inline">Lock</span>
+        </button>
       </header>
 
+      {/* ── Body ────────────────────────────────────────────────────────── */}
       <div className="flex-1 flex min-h-0">
-        <aside className="w-64 border-r border-border flex flex-col shrink-0">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              My Notes
-            </span>
-            <button
-              onClick={handleNew}
-              disabled={saving || loading}
-              className="text-accent text-xl leading-none disabled:opacity-40"
-              title="New note"
-            >
-              +
-            </button>
+        <Sidebar
+          entries={viewEntries}
+          meta={activeMeta}
+          selectedId={selectedId}
+          filterTagIds={filterTagIds}
+          session={session}
+          viewAs={viewAs}
+          loading={loading}
+          saving={saving}
+          onSelect={setSelectedId}
+          onNew={handleNew}
+          onDelete={handleDelete}
+          onMetaChange={handleMetaChange}
+          onViewChange={handleViewChange}
+          onFilterTagsChange={setFilterTagIds}
+        />
+
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center">
+            <span className="w-4 h-4 border-2 border-border border-t-accent rounded-full animate-spin inline-block" />
           </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <p className="px-4 py-3 text-sm text-muted">Loading…</p>
-            ) : (
-              <>
-                {myEntries.length === 0 && (
-                  <p className="px-4 py-3 text-sm text-muted">No notes yet</p>
-                )}
-                {myEntries.map((e) => (
-                  <NoteRow
-                    key={e.note.id}
-                    entry={e}
-                    selected={selectedId === e.note.id}
-                    onClick={() => setSelectedId(e.note.id)}
-                    onDelete={() => handleDelete(e)}
-                  />
-                ))}
-
-                {u2Entries.length > 0 && (
-                  <>
-                    <div className="px-4 py-3 border-t border-border">
-                      <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                        U2 Notes
-                      </span>
-                    </div>
-                    {u2Entries.map((e) => (
-                      <NoteRow
-                        key={e.note.id}
-                        entry={e}
-                        selected={selectedId === e.note.id}
-                        onClick={() => setSelectedId(e.note.id)}
-                        onDelete={() => handleDelete(e)}
-                      />
-                    ))}
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </aside>
-
-        <main className="flex-1 flex flex-col min-w-0">
-          {!selected ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted">
-              {loading ? "Loading…" : "Select or create a note"}
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {session.role === "u1" && selected.note.owner === "u2" && (
-                <div className="px-8 pt-6 pb-0">
-                  <span className="text-xs text-muted border border-border rounded px-1.5 py-0.5">
-                    u2
-                  </span>
-                </div>
-              )}
-              <div className="flex-1 flex flex-col px-8 py-6 overflow-hidden">
-                <input
-                  value={canEdit ? draft.title : selected.note.title}
-                  onChange={(e) =>
-                    canEdit && setDraft((d) => ({ ...d, title: e.target.value }))
-                  }
-                  onBlur={saveDraft}
-                  placeholder="Title"
-                  readOnly={!canEdit}
-                  className="text-2xl font-semibold mb-4 outline-none bg-transparent border-none w-full"
-                />
-                <textarea
-                  value={canEdit ? draft.body : selected.note.body}
-                  onChange={(e) =>
-                    canEdit && setDraft((d) => ({ ...d, body: e.target.value }))
-                  }
-                  onBlur={saveDraft}
-                  placeholder="Start writing…"
-                  readOnly={!canEdit}
-                  className="flex-1 resize-none outline-none bg-transparent border-none text-base leading-relaxed w-full"
-                />
-              </div>
-            </div>
-          )}
-        </main>
+        }>
+          <NoteEditor
+            entry={selected}
+            meta={activeMeta}
+            draft={draft}
+            isDirty={isDraftDirty}
+            canEdit={canEdit}
+            viewingAsPartner={viewAs === "u2"}
+            onChange={handleDraftChange}
+            onTagsChange={handleTagsChange}
+            onSave={handleSaveRequest}
+          />
+        </Suspense>
       </div>
-    </div>
-  );
-}
 
-function NoteRow({
-  entry,
-  selected,
-  onClick,
-  onDelete,
-}: {
-  entry: NoteEntry;
-  selected: boolean;
-  onClick: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      className={`px-4 py-3 cursor-pointer border-b border-border ${
-        selected ? "bg-selected" : "hover:bg-selected"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium truncate">
-            {entry.note.title || "Untitled"}
-          </p>
-          <p className="text-xs text-muted truncate mt-0.5">
-            {entry.note.body || "No content"}
-          </p>
-        </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="text-sm text-muted hover:text-danger shrink-0 mt-0.5 leading-none"
-          title="Delete"
-        >
-          ×
-        </button>
-      </div>
+      {/* ── Save modal ───────────────────────────────────────────────────── */}
+      {showSaveModal && (
+        <SaveModal
+          saving={saving}
+          onConfirm={handleSaveConfirm}
+          onCancel={() => setShowSaveModal(false)}
+        />
+      )}
     </div>
   );
 }

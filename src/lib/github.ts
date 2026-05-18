@@ -31,7 +31,7 @@ export async function fetchNoteFiles(repo: string, pat: string): Promise<RemoteF
   if (!res.ok) throw new Error(`GitHub list failed: ${res.status}`);
 
   const entries: GHEntry[] = await res.json();
-  const napp = entries.filter((f) => f.name.endsWith(".napp"));
+  const napp = entries.filter((f) => f.name.endsWith(".napp") && !f.name.startsWith("meta-"));
 
   return Promise.all(
     napp.map(async (f) => {
@@ -40,6 +40,17 @@ export async function fetchNoteFiles(repo: string, pat: string): Promise<RemoteF
       return { path: f.path, sha: f.sha, content: await raw.text() };
     }),
   );
+}
+
+/** Reads a single file from the data branch via Contents API. Returns null if not found. */
+export async function readFile(repo: string, pat: string, path: string): Promise<RemoteFile | null> {
+  const res = await gh(pat, `/repos/${repo}/contents/${path}?ref=data`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Read failed ${res.status}`);
+  const data = await res.json();
+  const raw = atob((data.content as string).replace(/\s/g, ""));
+  const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  return { path: data.path, sha: data.sha, content: new TextDecoder().decode(bytes) };
 }
 
 function utf8ToBase64(str: string): string {
@@ -56,9 +67,10 @@ export async function writeNoteFile(
   path: string,
   content: string,
   sha?: string,
+  message?: string,
 ): Promise<string> {
   const body: Record<string, string> = {
-    message: sha ? "update note" : "create note",
+    message: message ?? (sha ? "update note" : "create note"),
     content: utf8ToBase64(content),
     branch: "data",
   };
@@ -77,12 +89,7 @@ export async function writeNoteFile(
   return data.content.sha as string;
 }
 
-export async function deleteNoteFile(
-  repo: string,
-  pat: string,
-  path: string,
-  sha: string,
-): Promise<void> {
+export async function deleteNoteFile(repo: string, pat: string, path: string, sha: string): Promise<void> {
   const res = await gh(pat, `/repos/${repo}/contents/${path}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },

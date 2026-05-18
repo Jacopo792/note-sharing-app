@@ -1,35 +1,53 @@
 @import "tailwindcss" source(none);
 @source "../src";
 
+/* ── Color tokens ───────────────────────────────────────────────────────── */
 :root {
   --background: #ffffff;
+  --surface:    #f7f7f8;
+  --raised:     #ffffff;
   --foreground: #1c1c1e;
-  --muted: #8e8e93;
-  --border: #e5e5ea;
-  --selected: #f2f2f7;
-  --accent: #007aff;
-  --danger: #ff3b30;
+  --muted:      #6e6e73;
+  --border:     #e5e5ea;
+  --selected:   #ebebf0;
+  --accent:     #007aff;
+  --danger:     #ff3b30;
+  --success:    #34c759;
+}
+
+.dark {
+  --background: #111112;
+  --surface:    #1c1c1e;
+  --raised:     #2c2c2e;
+  --foreground: #f2f2f7;
+  --muted:      #8e8e93;
+  --border:     #3a3a3c;
+  --selected:   #2c2c2e;
+  --accent:     #0a84ff;
+  --danger:     #ff453a;
+  --success:    #30d158;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface:    var(--surface);
+  --color-raised:     var(--raised);
   --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-selected: var(--selected);
-  --color-accent: var(--accent);
-  --color-danger: var(--danger);
+  --color-muted:      var(--muted);
+  --color-border:     var(--border);
+  --color-selected:   var(--selected);
+  --color-accent:     var(--accent);
+  --color-danger:     var(--danger);
+  --color-success:    var(--success);
   --font-sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
+/* ── Base ───────────────────────────────────────────────────────────────── */
 @layer base {
-  * {
-    border-color: var(--border);
-    box-sizing: border-box;
-  }
-  html, body, #root {
-    height: 100%;
-  }
+  * { box-sizing: border-box; }
+
+  html, body, #root { height: 100%; }
+
   body {
     background: var(--background);
     color: var(--foreground);
@@ -37,10 +55,151 @@
     -webkit-font-smoothing: antialiased;
     margin: 0;
   }
-  button {
-    font-family: inherit;
+
+  button, textarea, input, select { font-family: inherit; }
+
+  /* Smooth color transitions for theme switching */
+  *, *::before, *::after {
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      color 0.18s ease,
+      box-shadow 0.18s ease;
   }
-  textarea, input {
-    font-family: inherit;
-  }
+
+  /* Subtle custom scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 }
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95) translateY(-6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in   { animation: fade-in  0.15s ease-out both; }
+.animate-scale-in  { animation: scale-in 0.18s ease-out both; }
+.animate-slide-up  { animation: slide-up 0.15s ease-out both; }
+.animate-spin      { animation: spin 0.7s linear infinite; }
+
+/* ── Markdown editor overrides ───────────────────────────────────────────── */
+
+/* Remove the editor's own border and background so it inherits ours */
+.w-md-editor {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Toolbar */
+.w-md-editor-toolbar {
+  background: var(--surface) !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 8px 8px 0 0 !important;
+  padding: 4px 8px !important;
+}
+
+.w-md-editor-toolbar li > button {
+  color: var(--muted) !important;
+  border-radius: 5px !important;
+  transition: background 0.12s, color 0.12s !important;
+}
+
+.w-md-editor-toolbar li > button:hover {
+  color: var(--foreground) !important;
+  background: var(--selected) !important;
+}
+
+.w-md-editor-toolbar-divider {
+  background: var(--border) !important;
+}
+
+/* Editor area */
+.w-md-editor-content {
+  background: var(--background) !important;
+}
+
+.w-md-editor-text-pre > code,
+.w-md-editor-text-input,
+.w-md-editor-text {
+  color: var(--foreground) !important;
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+}
+
+/* Preview */
+.wmde-markdown {
+  background: var(--background) !important;
+  color: var(--foreground) !important;
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+}
+
+.wmde-markdown h1, .wmde-markdown h2, .wmde-markdown h3 {
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.wmde-markdown code {
+  background: var(--surface) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.wmde-markdown pre {
+  background: var(--surface) !important;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.wmde-markdown blockquote {
+  border-left-color: var(--accent) !important;
+  color: var(--muted) !important;
+}
+
+.wmde-markdown a { color: var(--accent) !important; }
+
+.wmde-markdown hr { border-color: var(--border) !important; }
+
+.wmde-markdown table thead tr {
+  background: var(--surface) !important;
+}
+
+.wmde-markdown table tr {
+  background: var(--background) !important;
+  border-color: var(--border) !important;
+}
+
+.wmde-markdown table tr:nth-child(2n) {
+  background: var(--surface) !important;
+}
+
+/* Tab buttons (Edit / Live / Preview) */
+.w-md-editor-toolbar-mode button {
+  color: var(--muted) !important;
+}
+.w-md-editor-toolbar-mode button.active,
+.w-md-editor-toolbar-mode button[data-active="true"] {
+  color: var(--accent) !important;
+}
+
+/* Drag bar */
+.w-md-editor-resize { background: var(--border) !important; }

@@ -1,10 +1,17 @@
 import { createRootRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { initTheme } from "@/lib/theme";
 
 export const Route = createRootRoute({
-  component: () => <Outlet />,
+  component: Root,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
+
+function Root() {
+  useEffect(() => { initTheme(); }, []);
+  return <Outlet />;
+}
 
 function NotFoundComponent() {
   return (
@@ -12,9 +19,7 @@ function NotFoundComponent() {
       <div className="text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
         <p className="mt-2 text-sm text-muted">Page not found</p>
-        <Link to="/" className="mt-6 inline-block text-accent text-sm">
-          Go home
-        </Link>
+        <Link to="/" className="mt-6 inline-block text-accent text-sm">Go home</Link>
       </div>
     </div>
   );
@@ -27,10 +32,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
       <div className="max-w-md text-center">
         <p className="font-semibold text-foreground">Something went wrong</p>
         <p className="mt-2 text-sm text-muted">{error.message}</p>
-        <button
-          onClick={() => { router.invalidate(); reset(); }}
-          className="mt-4 text-sm text-accent"
-        >
+        <button onClick={() => { router.invalidate(); reset(); }} className="mt-4 text-sm text-accent">
           Try again
         </button>
       </div>

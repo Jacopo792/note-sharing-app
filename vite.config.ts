@@ -6,6 +6,7 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 
 export default defineConfig({
   base: process.env.VITE_BASE_PATH ?? "/",
+  build: { chunkSizeWarningLimit: 1400 },
   plugins: [
     TanStackRouterVite({
       routesDirectory: "./src/routes",

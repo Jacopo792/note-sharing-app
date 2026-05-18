@@ -12,7 +12,10 @@
     "keygen": "node scripts/keygen.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
     "@tanstack/react-router": "^1.168.25",
+    "@uiw/react-md-editor": "^4.1.0",
+    "lucide-react": "^1.16.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
