@@ -15,17 +15,17 @@ A stateless, two-user encrypted note-taking app. Notes are stored as AES-256-GCM
 ## Running the app
 
 ```bash
-npm install
-npm run dev        # dev server at http://localhost:5173
-npm run build      # production build → dist/
-npm run lint
+pnpm install
+pnpm dev           # dev server at http://localhost:5173
+pnpm build         # production build → dist/
+pnpm lint
 ```
 
 ### One-time key setup
 ```bash
 cp .env.example .env
 # Fill in MASTER_SEED (generate with command in .env.example), GITHUB_PAT, GITHUB_REPO
-npm run keygen
+pnpm keygen
 # Outputs: u1 bundle (keep private) and u2 bundle (send to user2 once, securely)
 ```
 

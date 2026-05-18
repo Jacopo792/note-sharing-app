@@ -19,9 +19,9 @@ dist-ssr
 # Environment — NEVER commit; contains master seed and GitHub PAT
 .env
 
-# Lock files for other package managers (project uses npm)
+# Lock files for other package managers (project uses pnpm)
 bun.lock
-pnpm-lock.yaml
+package-lock.json
 yarn.lock
 
 # Java leftovers (backend removed)
