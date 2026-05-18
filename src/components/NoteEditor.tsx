@@ -29,22 +29,9 @@ export function NoteEditor({
   onChange, onTagsChange, onSave,
 }: Props) {
   const isDark = useIsDark();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [editorHeight, setEditorHeight] = useState(400);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const tagPickerRef = useRef<HTMLDivElement>(null);
 
-  // Resize editor to fill container
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const ro = new ResizeObserver((entries) => {
-      setEditorHeight(Math.max(200, entries[0].contentRect.height));
-    });
-    ro.observe(containerRef.current);
-    return () => ro.disconnect();
-  }, []);
-
-  // Close tag picker on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (tagPickerRef.current && !tagPickerRef.current.contains(e.target as Node))
@@ -54,7 +41,6 @@ export function NoteEditor({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Ctrl+S → save
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -90,7 +76,6 @@ export function NoteEditor({
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
-      {/* Owner badge for u1 viewing u2's note */}
       {viewingAsPartner && (
         <div className="px-5 pt-4 pb-0 animate-fade-in">
           <span className="text-[10px] uppercase tracking-widest text-muted border border-border rounded-full px-2 py-0.5">
@@ -99,7 +84,6 @@ export function NoteEditor({
         </div>
       )}
 
-      {/* Title — px-5 matches the editor's 20px internal padding set in styles.css */}
       <div className="px-5 pt-5 pb-1">
         <input
           value={draft.title}
@@ -110,7 +94,6 @@ export function NoteEditor({
         />
       </div>
 
-      {/* Tags row */}
       <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2">
         {assignedTags.map((tag) => (
           <TagBadge key={tag.id} tag={tag} onRemove={canEdit ? () => removeTag(tag.id) : undefined} />
@@ -141,17 +124,11 @@ export function NoteEditor({
         )}
       </div>
 
-      {/* Markdown editor — no fontFamily override; editor manages its own text
-          metrics so textarea and highlight overlay stay in sync */}
-      <div
-        ref={containerRef}
-        className="flex-1 min-h-0 overflow-hidden border-t border-border"
-        data-color-mode={isDark ? "dark" : "light"}
-      >
+      <div className="flex-1 min-h-0 overflow-hidden border-t border-border" data-color-mode={isDark ? "dark" : "light"}>
         <MDEditor
           value={draft.body}
           onChange={(v) => canEdit && onChange(draft.title, v ?? "")}
-          height={editorHeight}
+          height="100%"
           preview="live"
           visibleDragbar={false}
           textareaProps={{ readOnly: !canEdit, placeholder: "Start writing in Markdown…" }}
